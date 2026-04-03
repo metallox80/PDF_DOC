@@ -9,28 +9,31 @@ from streamlit_mermaid import st_mermaid
 
 st.set_page_config(page_title="Gemini Master Tool 2026", layout="wide")
 
-# --- CARICAMENTO FILE UNICO NELLA SIDEBAR ---
+# --- GESTIONE SESSIONE FILE ---
+if 'pdf_bytes' not in st.session_state:
+    st.session_state['pdf_bytes'] = None
+if 'last_uploaded' not in st.session_state:
+    st.session_state['last_uploaded'] = None
+
+# --- SIDEBAR: CARICAMENTO ---
 st.sidebar.title("📁 Carica Documento")
 uploaded_file = st.sidebar.file_uploader("Carica il PDF qui", type="pdf")
 
 if uploaded_file:
-    # Gestione della sessione per evitare ricaricamenti inutili
-    if 'pdf_bytes' not in st.session_state or st.session_state.get('last_uploaded') != uploaded_file.name:
+    if st.session_state['last_uploaded'] != uploaded_file.name:
         st.session_state['pdf_bytes'] = uploaded_file.read()
         st.session_state['last_uploaded'] = uploaded_file.name
     st.sidebar.success(f"✅ {uploaded_file.name} pronto!")
-else:
-    st.sidebar.info("Carica un PDF a sinistra.")
 
 # --- MENU ---
 st.sidebar.markdown("---")
-menu = st.sidebar.radio("Scegli Funzione", ["🏠 Dashboard", "🔄 Converti & Estrai", "🔃 Ruota & Riordina", "🌐 Traduttore", "📊 Diagrammi"])
+menu = st.sidebar.radio("Scegli Funzione", ["🏠 Dashboard", "🔄 Converti & Estrai", "🔃 Ruota Singole Pagine", "🔢 Riordina Pagine", "🌐 Traduttore", "📊 Diagrammi"])
 
-if not uploaded_file and menu != "📊 Diagrammi":
+if not st.session_state['pdf_bytes'] and menu != "📊 Diagrammi":
     st.warning("⚠️ Carica un file PDF nella sidebar per iniziare.")
     st.stop()
 
-# --- LOGICA DASHBOARD ---
+# --- 🏠 DASHBOARD ---
 if menu == "🏠 Dashboard":
     st.header("Anteprima Documento")
     doc = fitz.open(stream=st.session_state['pdf_bytes'], filetype="pdf")
@@ -38,7 +41,7 @@ if menu == "🏠 Dashboard":
     pix = doc[p_idx].get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
     st.image(Image.open(io.BytesIO(pix.tobytes("png"))), use_container_width=True)
 
-# --- LOGICA CONVERTI & ESTRAI ---
+# --- 🔄 CONVERTI & ESTRAI ---
 elif menu == "🔄 Converti & Estrai":
     st.header("Conversione ed Estrazione")
     col1, col2 = st.columns(2)
@@ -58,46 +61,56 @@ elif menu == "🔄 Converti & Estrai":
                 st.download_button("📥 Scarica Estratto", buf.getvalue(), "estratto.pdf")
             except: st.error("Errore nel formato range.")
 
-# --- LOGICA RUOTA & RIORDINA (FIX ANTEPRIMA) ---
-elif menu == "🔃 Ruota & Riordina":
-    st.header("Modifica Struttura")
+# --- 🔃 RUOTA SINGOLE PAGINE (NUOVA LOGICA) ---
+elif menu == "🔃 Ruota Singole Pagine":
+    st.header("Rotazione Mirata")
     doc = fitz.open(stream=st.session_state['pdf_bytes'], filetype="pdf")
-    tab_rot, tab_ord = st.tabs(["🔃 Rotazione", "🔢 Riordino"])
     
-    with tab_rot:
-        col_ctrl, col_prev = st.columns([1, 1])
-        with col_ctrl:
-            angle = st.selectbox("Seleziona angolo di rotazione:", [0, 90, 180, 270], index=0)
-            st.write("L'anteprima mostra come cambierà la prima pagina.")
-            if st.button("Conferma e Ruota tutto il PDF"):
-                for page in doc:
-                    page.set_rotation((page.rotation + angle) % 360)
-                buf = io.BytesIO()
-                doc.save(buf)
-                st.download_button("📥 Scarica PDF Ruotato", buf.getvalue(), "ruotato.pdf")
+    col_ctrl, col_prev = st.columns([1, 1])
+    
+    with col_ctrl:
+        st.subheader("Impostazioni")
+        target_page = st.number_input("Quale pagina vuoi ruotare?", min_value=1, max_value=len(doc), value=1)
+        angle = st.selectbox("Angolo di rotazione oraria:", [0, 90, 180, 270], index=0)
         
-        with col_prev:
-            # FIX: Generazione anteprima immediata basata sulla scelta dell'utente
-            page_preview = doc[0]
-            # Usiamo Matrix per simulare la rotazione visiva nell'anteprima
-            mat = fitz.Matrix(angle) 
-            pix = page_preview.get_pixmap(matrix=mat)
-            st.image(Image.open(io.BytesIO(pix.tobytes("png"))), caption=f"Anteprima a {angle}°", use_container_width=True)
+        st.write("---")
+        if st.button("Applica rotazione e salva"):
+            # Applichiamo la rotazione solo alla pagina selezionata
+            page_to_rot = doc[target_page - 1]
+            page_to_rot.set_rotation((page_to_rot.rotation + angle) % 360)
             
-    with tab_ord:
-        st.write("### Ordine Pagine")
-        grid = st.columns(6)
-        for i in range(len(doc)):
-            pix = doc[i].get_pixmap(matrix=fitz.Matrix(0.1, 0.1))
-            with grid[i % 6]: st.image(Image.open(io.BytesIO(pix.tobytes("png"))), caption=f"P. {i+1}")
-        order = st.text_input("Nuova sequenza (es: 3,2,1)", value=", ".join(map(str, range(1, len(doc)+1))))
-        if st.button("Applica Ordine"):
-            try:
-                idx_list = [int(x.strip()) - 1 for x in order.split(",")]
-                doc.select(idx_list)
-                buf = io.BytesIO(); doc.save(buf)
-                st.download_button("📥 Scarica Riordinato", buf.getvalue(), "riordinato.pdf")
-            except: st.error("Errore nei numeri inseriti.")
+            buf = io.BytesIO()
+            doc.save(buf)
+            # Aggiorniamo i bytes in sessione per permettere modifiche multiple
+            st.session_state['pdf_bytes'] = buf.getvalue()
+            st.success(f"Pagina {target_page} ruotata di {angle}°!")
+            st.download_button("📥 Scarica PDF Modificato", buf.getvalue(), "pdf_ruotato.pdf")
+
+    with col_prev:
+        st.subheader(f"Anteprima Pagina {target_page}")
+        # Anteprima dinamica della pagina selezionata con l'angolo scelto
+        preview_page = doc[target_page - 1]
+        mat = fitz.Matrix(angle)
+        pix = preview_page.get_pixmap(matrix=mat)
+        st.image(Image.open(io.BytesIO(pix.tobytes("png"))), caption=f"Anteprima Pagina {target_page} a {angle}°", use_container_width=True)
+
+# --- 🔢 RIORDINA PAGINE ---
+elif menu == "🔢 Riordina Pagine":
+    st.header("Cambia Ordine")
+    doc = fitz.open(stream=st.session_state['pdf_bytes'], filetype="pdf")
+    grid = st.columns(6)
+    for i in range(len(doc)):
+        pix = doc[i].get_pixmap(matrix=fitz.Matrix(0.1, 0.1))
+        with grid[i % 6]: st.image(Image.open(io.BytesIO(pix.tobytes("png"))), caption=f"P. {i+1}")
+    order = st.text_input("Nuova sequenza (es: 3,2,1)", value=", ".join(map(str, range(1, len(doc)+1))))
+    if st.button("Applica Ordine"):
+        try:
+            idx_list = [int(x.strip()) - 1 for x in order.split(",")]
+            doc.select(idx_list)
+            buf = io.BytesIO(); doc.save(buf)
+            st.session_state['pdf_bytes'] = buf.getvalue()
+            st.download_button("📥 Scarica Riordinato", buf.getvalue(), "riordinato.pdf")
+        except: st.error("Errore nei numeri.")
 
 # --- TRADUTTORE ---
 elif menu == "🌐 Traduttore":
