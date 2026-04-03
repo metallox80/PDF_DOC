@@ -18,9 +18,9 @@ menu = st.sidebar.radio("Scegli Funzione", ["📄 PDF Manager", "🌐 Traduttore
 if menu == "📄 PDF Manager":
     st.header("Gestione Avanzata PDF")
     
-    tab1, tab2, tab3, tab4 = st.tabs(["🔄 Converti & Estrai", "➕ Unisci PDF", "🔃 Ruota", "🔢 Riordina"])
+    tab1, tab2, tab3, tab4 = st.tabs(["🔄 Converti & Estrai", "➕ Unisci PDF", "🔃 Ruota", "🔢 Riordina con Anteprima"])
 
-    # --- TAB 1: CONVERSIONE ED ESTRAZIONE ---
+    # --- TAB 1, 2, 3 (Codice invariato per brevità, mantieni quello precedente) ---
     with tab1:
         uploaded_pdf = st.file_uploader("Carica un PDF", type="pdf", key="pdf_conv")
         if uploaded_pdf:
@@ -39,7 +39,6 @@ if menu == "📄 PDF Manager":
                     buf = io.BytesIO(); new.save(buf)
                     st.download_button("📥 Scarica Estratto", buf.getvalue(), "estratto.pdf")
 
-    # --- TAB 2: UNIONE PDF ---
     with tab2:
         merge_files = st.file_uploader("Seleziona PDF da unire", type="pdf", accept_multiple_files=True)
         if merge_files and len(merge_files) > 1:
@@ -50,7 +49,6 @@ if menu == "📄 PDF Manager":
                 buf = io.BytesIO(); merger.save(buf)
                 st.download_button("📥 Scarica PDF Unito", buf.getvalue(), "unito.pdf")
 
-    # --- TAB 3: ROTAZIONE ---
     with tab3:
         rot_file = st.file_uploader("Carica PDF da ruotare", type="pdf", key="pdf_rot")
         if rot_file:
@@ -61,62 +59,18 @@ if menu == "📄 PDF Manager":
                 buf = io.BytesIO(); doc.save(buf)
                 st.download_button("📥 Scarica Ruotato", buf.getvalue(), "ruotato.pdf")
 
-    # --- TAB 4: RIORDINA PAGINE (NUOVA) ---
+    # --- TAB 4: RIORDINA PAGINE CON ANTEPRIME ---
     with tab4:
-        st.subheader("Cambia l'ordine delle pagine")
-        reorder_file = st.file_uploader("Carica il PDF", type="pdf", key="pdf_reorder")
+        st.subheader("Visualizza e Riordina")
+        reorder_file = st.file_uploader("Carica il PDF per vedere le anteprime", type="pdf", key="pdf_reorder")
+        
         if reorder_file:
             doc = fitz.open(stream=reorder_file.read(), filetype="pdf")
             num_pages = len(doc)
-            st.info(f"Il documento ha {num_pages} pagine.")
             
-            new_order_str = st.text_input("Inserisci il nuovo ordine separato da virgola (es: 3,1,2,4)", 
-                                         value=", ".join(map(str, range(1, num_pages + 1))))
-            
-            if st.button("Applica Nuovo Ordine"):
-                try:
-                    # Converte la stringa in lista di indici (0-based)
-                    new_order = [int(x.strip()) - 1 for x in new_order_str.split(",")]
-                    
-                    if len(new_order) != num_pages:
-                        st.error(f"Errore: devi inserire esattamente {num_pages} numeri.")
-                    else:
-                        new_doc = fitz.open()
-                        new_doc.select(new_order) # Seleziona e ordina
-                        # Nota: select() modifica il documento esistente o lo filtra
-                        doc.select(new_order)
-                        
-                        buf = io.BytesIO()
-                        doc.save(buf)
-                        st.download_button("📥 Scarica PDF Riordinato", buf.getvalue(), "riordinato.pdf")
-                        st.success("Ordine applicato con successo!")
-                except Exception as e:
-                    st.error(f"Errore: controlla i numeri inseriti. ({e})")
-
-# --- SEZIONE TRADUTTORE ---
-elif menu == "🌐 Traduttore PDF":
-    st.header("Traduzione PDF")
-    up_trans = st.file_uploader("Carica PDF", type="pdf")
-    lang = st.selectbox("Lingua", ["it", "en", "fr", "es", "de"])
-    if up_trans and st.button("Traduci"):
-        with st.spinner("Traduzione..."):
-            doc = fitz.open(stream=up_trans.read(), filetype="pdf")
-            out_doc = fitz.open()
-            translator = GoogleTranslator(source='auto', target=lang)
-            for page in doc:
-                new_page = out_doc.new_page(width=page.rect.width, height=page.rect.height)
-                for b in page.get_text("blocks"):
-                    if b[4].strip():
-                        trad = translator.translate(b[4][:4000])
-                        new_page.insert_text((b[0], b[1]), trad, fontsize=9)
-            buf = io.BytesIO(); out_doc.save(buf)
-            st.download_button("📥 Scarica Tradotto", buf.getvalue(), "tradotto.pdf")
-
-# --- SEZIONE DIAGRAMMI ---
-elif menu == "📊 Crea Diagrammi":
-    st.header("Diagrammi Mermaid")
-    code = st.text_area("Sintassi", "graph TD\nA[Inizio] --> B[Fine]", height=200)
-    st_mermaid(code)
-
-st.sidebar.markdown("---")
-st.sidebar.info("Versione 2.7 - Full PDF Editor")
+            # Mostra anteprime in una griglia
+            st.write("### Anteprima Pagine")
+            cols = st.columns(5) # 5 miniature per riga
+            for i in range(num_pages):
+                page = doc[i]
+                pix = page.get_pixmap(matrix=fitz.Matrix(0.2, 0.
