@@ -73,4 +73,55 @@ if menu == "📄 PDF Manager":
             cols = st.columns(5) # 5 miniature per riga
             for i in range(num_pages):
                 page = doc[i]
-                pix = page.get_pixmap(matrix=fitz.Matrix(0.2, 0.
+                pix = page.get_pixmap(matrix=fitz.Matrix(0.2, 0.2)) # Qualità bassa per velocità
+                img = Image.open(io.BytesIO(pix.tobytes("png")))
+                with cols[i % 5]:
+                    st.image(img, caption=f"Pagina {i+1}", use_container_width=True)
+            
+            st.divider()
+            
+            # Input per il riordino
+            new_order_str = st.text_input("Inserisci il nuovo ordine (es: 2, 1, 4, 3)", 
+                                         value=", ".join(map(str, range(1, num_pages + 1))))
+            
+            if st.button("Applica e Genera PDF"):
+                try:
+                    new_order = [int(x.strip()) - 1 for x in new_order_str.split(",")]
+                    if len(new_order) != num_pages:
+                        st.error(f"Devi inserire tutti i {num_pages} numeri delle pagine.")
+                    else:
+                        doc.select(new_order)
+                        buf = io.BytesIO()
+                        doc.save(buf)
+                        st.download_button("📥 Scarica PDF Riordinato", buf.getvalue(), "riordinato.pdf")
+                        st.success("Ordine applicato!")
+                except Exception as e:
+                    st.error(f"Errore: controlla i numeri inseriti.")
+
+# --- SEZIONE TRADUTTORE ---
+elif menu == "🌐 Traduttore PDF":
+    st.header("Traduzione PDF")
+    up_trans = st.file_uploader("Carica PDF", type="pdf")
+    lang = st.selectbox("Lingua", ["it", "en", "fr", "es", "de"])
+    if up_trans and st.button("Traduci"):
+        with st.spinner("Traduzione..."):
+            doc = fitz.open(stream=up_trans.read(), filetype="pdf")
+            out_doc = fitz.open()
+            translator = GoogleTranslator(source='auto', target=lang)
+            for page in doc:
+                new_page = out_doc.new_page(width=page.rect.width, height=page.rect.height)
+                for b in page.get_text("blocks"):
+                    if b[4].strip():
+                        trad = translator.translate(b[4][:4000])
+                        new_page.insert_text((b[0], b[1]), trad, fontsize=9)
+            buf = io.BytesIO(); out_doc.save(buf)
+            st.download_button("📥 Scarica Tradotto", buf.getvalue(), "tradotto.pdf")
+
+# --- SEZIONE DIAGRAMMI ---
+elif menu == "📊 Crea Diagrammi":
+    st.header("Diagrammi Mermaid")
+    code = st.text_area("Sintassi", "graph TD\nA[Inizio] --> B[Fine]", height=200)
+    st_mermaid(code)
+
+st.sidebar.markdown("---")
+st.sidebar.info("Versione 2.8 - Visual PDF Editor")
