@@ -1,0 +1,9 @@
+streamlit
+pymupdf
+pdf2docx
+deep-translator
+librosa
+soundfile
+matplotlib
+numpy
+pillow
