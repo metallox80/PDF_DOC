@@ -129,4 +129,8 @@ elif menu == "🌐 Traduttore PDF":
 # --- 📊 CREA DIAGRAMMI ---
 elif menu == "📊 Crea Diagrammi":
     st.header("Generatore Diagrammi")
-    code = st.text_area("Codice Mermaid", "graph TD\nA[File Caricato] --> B[Scegli Tool]\nB --> C[Scar
+    code = st.text_area("Codice Mermaid", "graph TD\nA[File Caricato] --> B[Scegli Tool]\nB --> C[Scarica Risultato]", height=200)
+    st_mermaid(code)
+
+st.sidebar.markdown("---")
+st.sidebar.info("Gemini Tool 2026 - Versione Unificata")
