@@ -18,70 +18,85 @@ menu = st.sidebar.radio("Scegli Funzione", ["📄 PDF Manager", "🌐 Traduttore
 if menu == "📄 PDF Manager":
     st.header("Gestione Avanzata PDF")
     
-    # Sottosezioni per non affollare la pagina
-    tab1, tab2, tab3 = st.tabs(["🔄 Converti & Estrai", "➕ Unisci PDF", "🔃 Ruota Pagine"])
+    tab1, tab2, tab3, tab4 = st.tabs(["🔄 Converti & Estrai", "➕ Unisci PDF", "🔃 Ruota", "🔢 Riordina"])
 
     # --- TAB 1: CONVERSIONE ED ESTRAZIONE ---
     with tab1:
-        uploaded_pdf = st.file_uploader("Carica un PDF per conversione o estratto", type="pdf", key="pdf_conv")
+        uploaded_pdf = st.file_uploader("Carica un PDF", type="pdf", key="pdf_conv")
         if uploaded_pdf:
-            with open("temp.pdf", "wb") as f:
-                f.write(uploaded_pdf.getbuffer())
-            
+            with open("temp_c.pdf", "wb") as f: f.write(uploaded_pdf.getbuffer())
             c1, c2 = st.columns(2)
             with c1:
-                if st.button("Converti in Word (.docx)"):
-                    with st.spinner("Conversione..."):
-                        cv = Converter("temp.pdf")
-                        cv.convert("output.docx")
-                        cv.close()
-                        with open("output.docx", "rb") as f:
-                            st.download_button("📥 Scarica Word", f, "documento.docx")
+                if st.button("Converti in Word"):
+                    cv = Converter("temp_c.pdf"); cv.convert("out.docx"); cv.close()
+                    with open("out.docx", "rb") as f: st.download_button("📥 Scarica Word", f, "doc.docx")
             with c2:
-                range_p = st.text_input("Range da estrarre (es: 1-3)", "1-1")
-                if st.button("Estrai Pagine"):
-                    doc = fitz.open("temp.pdf")
-                    start, end = map(int, range_p.split('-'))
-                    new_doc = fitz.open()
-                    new_doc.insert_pdf(doc, from_page=start-1, to_page=end-1)
-                    buf = io.BytesIO()
-                    new_doc.save(buf)
+                range_p = st.text_input("Range (es: 1-3)", "1-1")
+                if st.button("Estrai"):
+                    doc = fitz.open("temp_c.pdf")
+                    s, e = map(int, range_p.split('-'))
+                    new = fitz.open(); new.insert_pdf(doc, from_page=s-1, to_page=e-1)
+                    buf = io.BytesIO(); new.save(buf)
                     st.download_button("📥 Scarica Estratto", buf.getvalue(), "estratto.pdf")
 
     # --- TAB 2: UNIONE PDF ---
     with tab2:
-        st.subheader("Unisci più file in uno solo")
-        merge_files = st.file_uploader("Seleziona i file PDF da unire", type="pdf", accept_multiple_files=True)
+        merge_files = st.file_uploader("Seleziona PDF da unire", type="pdf", accept_multiple_files=True)
         if merge_files and len(merge_files) > 1:
-            if st.button("Avvia Unione"):
+            if st.button("Unisci file"):
                 merger = fitz.open()
-                for up_file in merge_files:
-                    with fitz.open(stream=up_file.read(), filetype="pdf") as part:
-                        merger.insert_pdf(part)
-                buf = io.BytesIO()
-                merger.save(buf)
-                st.download_button("📥 Scarica PDF Unito", buf.getvalue(), "pdf_unito_finale.pdf")
-        elif merge_files:
-            st.info("Carica almeno due file per sbloccare l'unione.")
+                for f in merge_files:
+                    with fitz.open(stream=f.read(), filetype="pdf") as p: merger.insert_pdf(p)
+                buf = io.BytesIO(); merger.save(buf)
+                st.download_button("📥 Scarica PDF Unito", buf.getvalue(), "unito.pdf")
 
     # --- TAB 3: ROTAZIONE ---
     with tab3:
-        st.subheader("Ruota le pagine del PDF")
         rot_file = st.file_uploader("Carica PDF da ruotare", type="pdf", key="pdf_rot")
         if rot_file:
-            angle = st.selectbox("Angolo di rotazione", [90, 180, 270], help="Rotazione in senso orario")
-            if st.button("Ruota tutte le pagine"):
+            angle = st.selectbox("Angolo", [90, 180, 270])
+            if st.button("Ruota tutto"):
                 doc = fitz.open(stream=rot_file.read(), filetype="pdf")
-                for page in doc:
-                    page.set_rotation(page.rotation + angle)
-                buf = io.BytesIO()
-                doc.save(buf)
-                st.download_button("📥 Scarica PDF Ruotato", buf.getvalue(), "pdf_ruotato.pdf")
+                for p in doc: p.set_rotation(p.rotation + angle)
+                buf = io.BytesIO(); doc.save(buf)
+                st.download_button("📥 Scarica Ruotato", buf.getvalue(), "ruotato.pdf")
+
+    # --- TAB 4: RIORDINA PAGINE (NUOVA) ---
+    with tab4:
+        st.subheader("Cambia l'ordine delle pagine")
+        reorder_file = st.file_uploader("Carica il PDF", type="pdf", key="pdf_reorder")
+        if reorder_file:
+            doc = fitz.open(stream=reorder_file.read(), filetype="pdf")
+            num_pages = len(doc)
+            st.info(f"Il documento ha {num_pages} pagine.")
+            
+            new_order_str = st.text_input("Inserisci il nuovo ordine separato da virgola (es: 3,1,2,4)", 
+                                         value=", ".join(map(str, range(1, num_pages + 1))))
+            
+            if st.button("Applica Nuovo Ordine"):
+                try:
+                    # Converte la stringa in lista di indici (0-based)
+                    new_order = [int(x.strip()) - 1 for x in new_order_str.split(",")]
+                    
+                    if len(new_order) != num_pages:
+                        st.error(f"Errore: devi inserire esattamente {num_pages} numeri.")
+                    else:
+                        new_doc = fitz.open()
+                        new_doc.select(new_order) # Seleziona e ordina
+                        # Nota: select() modifica il documento esistente o lo filtra
+                        doc.select(new_order)
+                        
+                        buf = io.BytesIO()
+                        doc.save(buf)
+                        st.download_button("📥 Scarica PDF Riordinato", buf.getvalue(), "riordinato.pdf")
+                        st.success("Ordine applicato con successo!")
+                except Exception as e:
+                    st.error(f"Errore: controlla i numeri inseriti. ({e})")
 
 # --- SEZIONE TRADUTTORE ---
 elif menu == "🌐 Traduttore PDF":
     st.header("Traduzione PDF")
-    up_trans = st.file_uploader("Carica PDF", type="pdf", key="trans")
+    up_trans = st.file_uploader("Carica PDF", type="pdf")
     lang = st.selectbox("Lingua", ["it", "en", "fr", "es", "de"])
     if up_trans and st.button("Traduci"):
         with st.spinner("Traduzione..."):
@@ -94,15 +109,14 @@ elif menu == "🌐 Traduttore PDF":
                     if b[4].strip():
                         trad = translator.translate(b[4][:4000])
                         new_page.insert_text((b[0], b[1]), trad, fontsize=9)
-            buf = io.BytesIO()
-            out_doc.save(buf)
+            buf = io.BytesIO(); out_doc.save(buf)
             st.download_button("📥 Scarica Tradotto", buf.getvalue(), "tradotto.pdf")
 
 # --- SEZIONE DIAGRAMMI ---
 elif menu == "📊 Crea Diagrammi":
     st.header("Diagrammi Mermaid")
-    code = st.text_area("Sintassi (es. graph LR; A-->B)", "graph TD\nA[Start] --> B[Process]\nB --> C[End]", height=200)
+    code = st.text_area("Sintassi", "graph TD\nA[Inizio] --> B[Fine]", height=200)
     st_mermaid(code)
 
 st.sidebar.markdown("---")
-st.sidebar.info("Versione 2.6 - PDF Expert Mode")
+st.sidebar.info("Versione 2.7 - Full PDF Editor")
