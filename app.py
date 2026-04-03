@@ -1,121 +1,106 @@
 import streamlit as st
-import fitz
+import fitz  # PyMuPDF
 from PIL import Image
 import io
 import os
 from pdf2docx import Converter
 from deep_translator import GoogleTranslator
-import librosa
-import soundfile as sf
-import numpy as np
-import matplotlib.pyplot as plt
-import yt_dlp
+from streamlit_mermaid import st_mermaid
 
-st.set_page_config(page_title="Barco WEB TOOL", layout="wide")
+st.set_page_config(page_title="Gemini Master Tool 2026", layout="wide")
 
-st.title("🚀 Gemini Ultimate Web Tool 2026")
+st.title("🚀 Gemini Master Tool: PDF & Diagrammi")
 
-# Sidebar
-menu = st.sidebar.radio("Scegli Funzione", ["📄 PDF Manager", "🌐 Traduttore PDF", "🎵 Audio Editor", "📺 YouTube Downloader"])
+# Sidebar semplificata
+menu = st.sidebar.radio("Scegli Funzione", ["📄 PDF Manager", "🌐 Traduttore PDF", "📊 Crea Diagrammi"])
 
 # --- SEZIONE PDF MANAGER ---
 if menu == "📄 PDF Manager":
-    st.header("Gestione PDF")
+    st.header("Gestione e Conversione PDF")
     uploaded_pdf = st.file_uploader("Carica un PDF", type="pdf")
+    
     if uploaded_pdf:
         with open("temp.pdf", "wb") as f:
             f.write(uploaded_pdf.getbuffer())
+        
         col1, col2 = st.columns([1, 2])
+        
         with col1:
-            if st.button("Converti in Word"):
-                cv = Converter("temp.pdf")
-                cv.convert("output.docx")
-                cv.close()
-                with open("output.docx", "rb") as f:
-                    st.download_button("📥 Scarica Word", f, "documento.docx")
+            st.subheader("Azioni veloci")
+            if st.button("Converti in Word (.docx)"):
+                with st.spinner("Conversione in corso..."):
+                    cv = Converter("temp.pdf")
+                    cv.convert("output.docx")
+                    cv.close()
+                    with open("output.docx", "rb") as f:
+                        st.download_button("📥 Scarica il file Word", f, "documento_convertito.docx")
+
+            st.divider()
+            st.subheader("Estrai Pagine")
+            range_p = st.text_input("Inserisci intervallo (es: 1-5)", "1-1")
+            if st.button("Estrai PDF"):
+                try:
+                    start, end = map(int, range_p.split('-'))
+                    doc = fitz.open("temp.pdf")
+                    new_doc = fitz.open()
+                    new_doc.insert_pdf(doc, from_page=start-1, to_page=end-1)
+                    buf = io.BytesIO()
+                    new_doc.save(buf)
+                    st.download_button("📥 Scarica Estratto PDF", buf.getvalue(), "estratto.pdf")
+                except:
+                    st.error("Formato range non valido. Usa 'inizio-fine'.")
+
         with col2:
+            st.subheader("Anteprima Documento")
             doc = fitz.open("temp.pdf")
-            page_num = st.slider("Pagina", 1, len(doc), 1)
-            pix = doc[page_num-1].get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
-            st.image(Image.open(io.BytesIO(pix.tobytes("png"))))
+            page_num = st.slider("Sfoglia pagine", 1, len(doc), 1)
+            page = doc[page_num-1]
+            pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
+            st.image(Image.open(io.BytesIO(pix.tobytes("png"))), use_container_width=True)
 
 # --- SEZIONE TRADUTTORE ---
 elif menu == "🌐 Traduttore PDF":
-    st.header("Traduttore PDF")
-    up_trans = st.file_uploader("Carica PDF", type="pdf")
-    lang = st.selectbox("Lingua", ["it", "en", "fr", "es"])
-    if up_trans and st.button("Traduci"):
-        doc = fitz.open(stream=up_trans.read(), filetype="pdf")
-        out_doc = fitz.open()
-        translator = GoogleTranslator(source='auto', target=lang)
-        for page in doc:
-            new_page = out_doc.new_page(width=page.rect.width, height=page.rect.height)
-            for b in page.get_text("blocks"):
-                if b[4].strip():
-                    trad = translator.translate(b[4][:4000])
-                    new_page.insert_text((b[0], b[1]), trad, fontsize=9)
-        buf = io.BytesIO()
-        out_doc.save(buf)
-        st.download_button("📥 Scarica Traduzione", buf.getvalue(), "tradotto.pdf")
-
-# --- SEZIONE AUDIO ---
-elif menu == "🎵 Audio Editor":
-    st.header("Audio Editor")
-    up_audio = st.file_uploader("Carica audio", type=["mp3", "wav"])
-    if up_audio:
-        y, sr = librosa.load(up_audio, sr=None)
-        duration = len(y) / sr
-        start_t, end_t = st.slider("Taglio (sec)", 0.0, duration, (0.0, duration))
-        if st.button("Taglia e Scarica"):
-            trimmed = y[int(start_t*sr):int(end_t*sr)]
-            buf = io.BytesIO()
-            sf.write(buf, trimmed, sr, format='WAV')
-            st.download_button("📥 Scarica WAV", buf.getvalue(), "taglio.wav")
-
-# --- SEZIONE YOUTUBE (VERSIONE FIX 403) ---
-elif menu == "📺 YouTube Downloader":
-    st.header("Scarica Audio da YouTube")
-    url = st.text_input("Incolla il link del video YouTube:")
-    format_choice = st.radio("Scegli formato uscita:", ["mp3", "wav"])
+    st.header("Traduzione Integrale PDF")
+    up_trans = st.file_uploader("Carica il PDF da tradurre", type="pdf", key="trans")
+    lang = st.selectbox("Seleziona lingua di destinazione", ["it", "en", "fr", "es", "de"])
     
-    if url and st.button("Estrai Audio"):
-        try:
-            with st.spinner("Aggirando i blocchi di YouTube..."):
-                # Opzioni avanzate per evitare l'errore 403
-                ydl_opts = {
-                    'format': 'bestaudio/best',
-                    # Questo simula un browser reale
-                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'nocheckcertificate': True,
-                    'quiet': True,
-                    'no_warnings': True,
-                    'outtmpl': 'audio_temp.%(ext)s',
-                    'postprocessors': [{
-                        'key': 'FFmpegExtractAudio',
-                        'preferredcodec': format_choice,
-                        'preferredquality': '192',
-                    }],
-                }
-                
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    # Scarica il file
-                    ydl.download([url])
-                
-                # Il nome del file creato da yt-dlp con il postprocessor
-                final_filename = f"audio_temp.{format_choice}"
-                
-                if os.path.exists(final_filename):
-                    with open(final_filename, "rb") as f:
-                        st.download_button(f"📥 Scarica {format_choice.upper()}", f, f"youtube_audio.{format_choice}")
-                    
-                    # Pulizia obbligatoria per non riempire il server
-                    os.remove(final_filename)
-                    st.success("Conversione riuscita!")
-                else:
-                    st.error("Il file non è stato generato correttamente.")
+    if up_trans and st.button("Traduci Documento"):
+        with st.spinner("Traduzione in corso... attendi..."):
+            doc = fitz.open(stream=up_trans.read(), filetype="pdf")
+            out_doc = fitz.open()
+            translator = GoogleTranslator(source='auto', target=lang)
+            
+            for page in doc:
+                new_page = out_doc.new_page(width=page.rect.width, height=page.rect.height)
+                for b in page.get_text("blocks"):
+                    if b[4].strip():
+                        trad = translator.translate(b[4][:4000])
+                        new_page.insert_text((b[0], b[1]), trad, fontsize=9)
+            
+            buf = io.BytesIO()
+            out_doc.save(buf)
+            st.download_button("📥 Scarica PDF Tradotto", buf.getvalue(), "tradotto.pdf")
 
-        except Exception as e:
-            st.error(f"Errore tecnico: {e}")
-            st.info("Suggerimento: Se l'errore persiste, prova con un altro link o riprova tra pochi minuti. YouTube blocca temporaneamente gli indirizzi IP dei server cloud.")
+# --- SEZIONE DIAGRAMMI (Stile Visio/Mermaid) ---
+elif menu == "📊 Crea Diagrammi":
+    st.header("Generatore di Diagrammi (Stile Visio)")
+    st.write("Usa la sintassi testuale per creare diagrammi professionali istantaneamente.")
+    
+    col_code, col_viz = st.columns([1, 1])
+    
+    with col_code:
+        default_code = """graph TD
+    A[Inizio Progetto] --> B{Approvato?}
+    B -- Sì --> C[Sviluppo]
+    B -- No --> D[Revisione]
+    C --> E[Conclusione]"""
+        
+        diagram_code = st.text_area("Scrivi il codice del diagramma qui:", value=default_code, height=300)
+        st.info("💡 Esempio: 'A --> B' crea una freccia tra due blocchi.")
 
-st.sidebar.info("Gemini Tool v2.1")
+    with col_viz:
+        st.subheader("Visualizzazione")
+        st_mermaid(diagram_code)
+
+st.sidebar.markdown("---")
+st.sidebar.info("Versione 2.5 - PDF & Diagrams")
