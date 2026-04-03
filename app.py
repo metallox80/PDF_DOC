@@ -72,7 +72,7 @@ elif menu == "🎵 Audio Editor":
             sf.write(buf, trimmed, sr, format='WAV')
             st.download_button("📥 Scarica WAV", buf.getvalue(), "taglio.wav")
 
-# --- SEZIONE YOUTUBE (NUOVA) ---
+# --- SEZIONE YOUTUBE (VERSIONE FIX 403) ---
 elif menu == "📺 YouTube Downloader":
     st.header("Scarica Audio da YouTube")
     url = st.text_input("Incolla il link del video YouTube:")
@@ -80,27 +80,42 @@ elif menu == "📺 YouTube Downloader":
     
     if url and st.button("Estrai Audio"):
         try:
-            with st.spinner("Estrazione audio in corso... attendi..."):
+            with st.spinner("Aggirando i blocchi di YouTube..."):
+                # Opzioni avanzate per evitare l'errore 403
                 ydl_opts = {
                     'format': 'bestaudio/best',
-                    'outtmpl': 'downloaded_audio.%(ext)s',
+                    # Questo simula un browser reale
+                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'nocheckcertificate': True,
+                    'quiet': True,
+                    'no_warnings': True,
+                    'outtmpl': 'audio_temp.%(ext)s',
                     'postprocessors': [{
                         'key': 'FFmpegExtractAudio',
                         'preferredcodec': format_choice,
                         'preferredquality': '192',
                     }],
                 }
+                
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    # Scarica il file
                     ydl.download([url])
                 
-                filename = f"downloaded_audio.{format_choice}"
-                with open(filename, "rb") as f:
-                    st.download_button(f"📥 Scarica {format_choice.upper()}", f, f"youtube_audio.{format_choice}")
+                # Il nome del file creato da yt-dlp con il postprocessor
+                final_filename = f"audio_temp.{format_choice}"
                 
-                # Pulizia file sul server
-                os.remove(filename)
-                st.success("Fatto!")
+                if os.path.exists(final_filename):
+                    with open(final_filename, "rb") as f:
+                        st.download_button(f"📥 Scarica {format_choice.upper()}", f, f"youtube_audio.{format_choice}")
+                    
+                    # Pulizia obbligatoria per non riempire il server
+                    os.remove(final_filename)
+                    st.success("Conversione riuscita!")
+                else:
+                    st.error("Il file non è stato generato correttamente.")
+
         except Exception as e:
-            st.error(f"Errore: {e}. Controlla che il link sia corretto.")
+            st.error(f"Errore tecnico: {e}")
+            st.info("Suggerimento: Se l'errore persiste, prova con un altro link o riprova tra pochi minuti. YouTube blocca temporaneamente gli indirizzi IP dei server cloud.")
 
 st.sidebar.info("Gemini Tool v2.1")
