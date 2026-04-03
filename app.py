@@ -9,7 +9,7 @@ from streamlit_mermaid import st_mermaid
 
 st.set_page_config(page_title="Gemini Master Tool 2026", layout="wide")
 
-# --- GESTIONE SESSIONE FILE ---
+# --- INIZIALIZZAZIONE SESSIONE ---
 if 'pdf_bytes' not in st.session_state:
     st.session_state['pdf_bytes'] = None
 if 'last_uploaded' not in st.session_state:
@@ -27,7 +27,7 @@ if uploaded_file:
 
 # --- MENU ---
 st.sidebar.markdown("---")
-menu = st.sidebar.radio("Scegli Funzione", ["🏠 Dashboard", "🔄 Converti & Estrai", "🔃 Ruota Singole Pagine", "🔢 Riordina Pagine", "🌐 Traduttore", "📊 Diagrammi"])
+menu = st.sidebar.radio("Scegli Funzione", ["🏠 Dashboard", "🔄 Converti & Estrai", "🔃 Rotazione Multipla", "🔢 Riordina Pagine", "🌐 Traduttore", "📊 Diagrammi"])
 
 if not st.session_state['pdf_bytes'] and menu != "📊 Diagrammi":
     st.warning("⚠️ Carica un file PDF nella sidebar per iniziare.")
@@ -51,7 +51,7 @@ elif menu == "🔄 Converti & Estrai":
             cv = Converter("temp.pdf"); cv.convert("out.docx"); cv.close()
             with open("out.docx", "rb") as f: st.download_button("📥 Scarica Word", f, "doc.docx")
     with col2:
-        range_p = st.text_input("Range (es: 1-2)", "1-1")
+        range_p = st.text_input("Range da estrarre (es: 1-2)", "1-1")
         if st.button("Estrai Pagine"):
             doc = fitz.open(stream=st.session_state['pdf_bytes'], filetype="pdf")
             try:
@@ -59,40 +59,54 @@ elif menu == "🔄 Converti & Estrai":
                 new = fitz.open(); new.insert_pdf(doc, from_page=s-1, to_page=e-1)
                 buf = io.BytesIO(); new.save(buf)
                 st.download_button("📥 Scarica Estratto", buf.getvalue(), "estratto.pdf")
-            except: st.error("Errore nel formato range.")
+            except: st.error("Formato range errato.")
 
-# --- 🔃 RUOTA SINGOLE PAGINE (NUOVA LOGICA) ---
-elif menu == "🔃 Ruota Singole Pagine":
-    st.header("Rotazione Mirata")
+# --- 🔃 ROTAZIONE MULTIPLA (AGGIORNATA) ---
+elif menu == "🔃 Rotazione Multipla":
+    st.header("Rotazione Avanzata")
     doc = fitz.open(stream=st.session_state['pdf_bytes'], filetype="pdf")
     
     col_ctrl, col_prev = st.columns([1, 1])
     
     with col_ctrl:
-        st.subheader("Impostazioni")
-        target_page = st.number_input("Quale pagina vuoi ruotare?", min_value=1, max_value=len(doc), value=1)
-        angle = st.selectbox("Angolo di rotazione oraria:", [0, 90, 180, 270], index=0)
+        mode = st.radio("Cosa vuoi ruotare?", ["Pagina Singola", "Tutto il PDF", "Range di Pagine"])
+        angle = st.selectbox("Angolo di rotazione oraria:", [90, 180, 270], index=0)
         
-        st.write("---")
-        if st.button("Applica rotazione e salva"):
-            # Applichiamo la rotazione solo alla pagina selezionata
-            page_to_rot = doc[target_page - 1]
-            page_to_rot.set_rotation((page_to_rot.rotation + angle) % 360)
+        target_pages = []
+        if mode == "Pagina Singola":
+            p = st.number_input("Numero pagina", min_value=1, max_value=len(doc), value=1)
+            target_pages = [p - 1]
+        elif mode == "Tutto il PDF":
+            target_pages = list(range(len(doc)))
+        else:
+            r = st.text_input("Inserisci range (es: 1-3 o 2,4,5)", "1-2")
+            try:
+                if "-" in r:
+                    s, e = map(int, r.split('-'))
+                    target_pages = list(range(s-1, e))
+                else:
+                    target_pages = [int(x.strip())-1 for x in r.split(',')]
+            except: st.error("Formato range non valido.")
+
+        if st.button("Applica Rotazione"):
+            for p_idx in target_pages:
+                if 0 <= p_idx < len(doc):
+                    doc[p_idx].set_rotation((doc[p_idx].rotation + angle) % 360)
             
             buf = io.BytesIO()
             doc.save(buf)
-            # Aggiorniamo i bytes in sessione per permettere modifiche multiple
             st.session_state['pdf_bytes'] = buf.getvalue()
-            st.success(f"Pagina {target_page} ruotata di {angle}°!")
-            st.download_button("📥 Scarica PDF Modificato", buf.getvalue(), "pdf_ruotato.pdf")
+            st.success("Rotazione applicata alla memoria del tool!")
+            st.download_button("📥 Scarica PDF Modificato", buf.getvalue(), "pdf_elaborato.pdf")
 
     with col_prev:
-        st.subheader(f"Anteprima Pagina {target_page}")
-        # Anteprima dinamica della pagina selezionata con l'angolo scelto
-        preview_page = doc[target_page - 1]
-        mat = fitz.Matrix(angle)
-        pix = preview_page.get_pixmap(matrix=mat)
-        st.image(Image.open(io.BytesIO(pix.tobytes("png"))), caption=f"Anteprima Pagina {target_page} a {angle}°", use_container_width=True)
+        st.subheader("Anteprima Rapida")
+        # Mostriamo la prima pagina del target selezionato
+        if target_pages:
+            p_to_show = target_pages[0]
+            if 0 <= p_to_show < len(doc):
+                pix = doc[p_to_show].get_pixmap(matrix=fitz.Matrix(angle))
+                st.image(Image.open(io.BytesIO(pix.tobytes("png"))), caption=f"Anteprima Pagina {p_to_show+1} ruotata", use_container_width=True)
 
 # --- 🔢 RIORDINA PAGINE ---
 elif menu == "🔢 Riordina Pagine":
@@ -109,6 +123,7 @@ elif menu == "🔢 Riordina Pagine":
             doc.select(idx_list)
             buf = io.BytesIO(); doc.save(buf)
             st.session_state['pdf_bytes'] = buf.getvalue()
+            st.success("Ordine aggiornato in memoria!")
             st.download_button("📥 Scarica Riordinato", buf.getvalue(), "riordinato.pdf")
         except: st.error("Errore nei numeri.")
 
@@ -116,7 +131,7 @@ elif menu == "🔢 Riordina Pagine":
 elif menu == "🌐 Traduttore":
     st.header("Traduzione PDF")
     lang = st.selectbox("Verso:", ["it", "en", "fr", "es", "de"])
-    if st.button("Traduci"):
+    if st.button("Avvia Traduzione"):
         with st.spinner("Traduzione..."):
             doc = fitz.open(stream=st.session_state['pdf_bytes'], filetype="pdf")
             out = fitz.open()
