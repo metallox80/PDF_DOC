@@ -9,103 +9,111 @@ from streamlit_mermaid import st_mermaid
 
 st.set_page_config(page_title="Gemini Master Tool 2026", layout="wide")
 
-st.title("🚀 Gemini Master Tool: PDF Expert & Diagrammi")
+# --- CARICAMENTO FILE UNICO NELLA SIDEBAR ---
+st.sidebar.title("📁 Carica Documento")
+uploaded_file = st.sidebar.file_uploader("Carica il PDF una volta sola per tutti i tool", type="pdf")
 
-# Sidebar
-menu = st.sidebar.radio("Scegli Funzione", ["📄 PDF Manager", "🌐 Traduttore PDF", "📊 Crea Diagrammi"])
+if uploaded_file:
+    # Salvataggio in session_state per non perdere il file durante i cambi tab
+    st.session_state['pdf_bytes'] = uploaded_file.read()
+    st.sidebar.success("✅ File pronto per l'uso!")
+else:
+    st.sidebar.info("Inizia caricando un PDF qui sopra.")
 
-# --- SEZIONE PDF MANAGER ---
-if menu == "📄 PDF Manager":
-    st.header("Gestione Avanzata PDF")
+# --- MENU DI NAVIGAZIONE ---
+st.sidebar.markdown("---")
+menu = st.sidebar.radio("Scegli Funzione", ["🏠 Dashboard & Anteprima", "🔄 Converti & Estrai", "🔃 Ruota & Riordina", "🌐 Traduttore PDF", "📊 Crea Diagrammi"])
+
+# Messaggio di errore se manca il file (tranne che per i diagrammi)
+if not uploaded_file and menu != "📊 Crea Diagrammi":
+    st.warning("⚠️ Per favore, carica un file PDF nella barra laterale a sinistra per iniziare.")
+    st.stop()
+
+# --- 🏠 DASHBOARD & ANTEPRIMA ---
+if menu == "🏠 Dashboard & Anteprima":
+    st.header("Anteprima Documento")
+    doc = fitz.open(stream=st.session_state['pdf_bytes'], filetype="pdf")
+    st.write(f"**Nome file:** {uploaded_file.name} | **Pagine:** {len(doc)}")
     
-    tab1, tab2, tab3, tab4 = st.tabs(["🔄 Converti & Estrai", "➕ Unisci PDF", "🔃 Ruota", "🔢 Riordina con Anteprima"])
+    page_num = st.slider("Sfoglia pagine", 1, len(doc), 1)
+    page = doc[page_num-1]
+    pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
+    st.image(Image.open(io.BytesIO(pix.tobytes("png"))), use_container_width=True)
 
-    # --- TAB 1, 2, 3 (Codice invariato per brevità, mantieni quello precedente) ---
-    with tab1:
-        uploaded_pdf = st.file_uploader("Carica un PDF", type="pdf", key="pdf_conv")
-        if uploaded_pdf:
-            with open("temp_c.pdf", "wb") as f: f.write(uploaded_pdf.getbuffer())
-            c1, c2 = st.columns(2)
-            with c1:
-                if st.button("Converti in Word"):
-                    cv = Converter("temp_c.pdf"); cv.convert("out.docx"); cv.close()
-                    with open("out.docx", "rb") as f: st.download_button("📥 Scarica Word", f, "doc.docx")
-            with c2:
-                range_p = st.text_input("Range (es: 1-3)", "1-1")
-                if st.button("Estrai"):
-                    doc = fitz.open("temp_c.pdf")
-                    s, e = map(int, range_p.split('-'))
-                    new = fitz.open(); new.insert_pdf(doc, from_page=s-1, to_page=e-1)
-                    buf = io.BytesIO(); new.save(buf)
-                    st.download_button("📥 Scarica Estratto", buf.getvalue(), "estratto.pdf")
+# --- 🔄 CONVERTI & ESTRAI ---
+elif menu == "🔄 Converti & Estrai":
+    st.header("Conversione ed Estrazione")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Word")
+        if st.button("Converti in .docx"):
+            with st.spinner("Conversione..."):
+                with open("temp_shared.pdf", "wb") as f:
+                    f.write(st.session_state['pdf_bytes'])
+                cv = Converter("temp_shared.pdf")
+                cv.convert("output.docx")
+                cv.close()
+                with open("output.docx", "rb") as f:
+                    st.download_button("📥 Scarica Word", f, "documento.docx")
+    
+    with col2:
+        st.subheader("Estratto")
+        range_p = st.text_input("Intervallo (es: 1-3)", "1-1")
+        if st.button("Estrai Pagine"):
+            doc = fitz.open(stream=st.session_state['pdf_bytes'], filetype="pdf")
+            try:
+                start, end = map(int, range_p.split('-'))
+                new_doc = fitz.open()
+                new_doc.insert_pdf(doc, from_page=start-1, to_page=end-1)
+                buf = io.BytesIO()
+                new_doc.save(buf)
+                st.download_button("📥 Scarica Estratto PDF", buf.getvalue(), "estratto.pdf")
+            except:
+                st.error("Formato non valido.")
 
-    with tab2:
-        merge_files = st.file_uploader("Seleziona PDF da unire", type="pdf", accept_multiple_files=True)
-        if merge_files and len(merge_files) > 1:
-            if st.button("Unisci file"):
-                merger = fitz.open()
-                for f in merge_files:
-                    with fitz.open(stream=f.read(), filetype="pdf") as p: merger.insert_pdf(p)
-                buf = io.BytesIO(); merger.save(buf)
-                st.download_button("📥 Scarica PDF Unito", buf.getvalue(), "unito.pdf")
-
-    with tab3:
-        rot_file = st.file_uploader("Carica PDF da ruotare", type="pdf", key="pdf_rot")
-        if rot_file:
-            angle = st.selectbox("Angolo", [90, 180, 270])
-            if st.button("Ruota tutto"):
-                doc = fitz.open(stream=rot_file.read(), filetype="pdf")
-                for p in doc: p.set_rotation(p.rotation + angle)
-                buf = io.BytesIO(); doc.save(buf)
-                st.download_button("📥 Scarica Ruotato", buf.getvalue(), "ruotato.pdf")
-
-    # --- TAB 4: RIORDINA PAGINE CON ANTEPRIME ---
-    with tab4:
-        st.subheader("Visualizza e Riordina")
-        reorder_file = st.file_uploader("Carica il PDF per vedere le anteprime", type="pdf", key="pdf_reorder")
+# --- 🔃 RUOTA & RIORDINA ---
+elif menu == "🔃 Ruota & Riordina":
+    st.header("Modifica Struttura")
+    doc = fitz.open(stream=st.session_state['pdf_bytes'], filetype="pdf")
+    
+    tab_rot, tab_ord = st.tabs(["🔃 Ruota", "🔢 Riordina"])
+    
+    with tab_rot:
+        angle = st.selectbox("Angolo di rotazione", [90, 180, 270])
+        if st.button("Applica Rotazione"):
+            for page in doc:
+                page.set_rotation(page.rotation + angle)
+            buf = io.BytesIO()
+            doc.save(buf)
+            st.download_button("📥 Scarica PDF Ruotato", buf.getvalue(), "ruotato.pdf")
+            
+    with tab_ord:
+        st.write("### Anteprima per Riordino")
+        cols = st.columns(6)
+        for i in range(len(doc)):
+            pix = doc[i].get_pixmap(matrix=fitz.Matrix(0.15, 0.15))
+            with cols[i % 6]:
+                st.image(Image.open(io.BytesIO(pix.tobytes("png"))), caption=f"P. {i+1}")
         
-        if reorder_file:
-            doc = fitz.open(stream=reorder_file.read(), filetype="pdf")
-            num_pages = len(doc)
-            
-            # Mostra anteprime in una griglia
-            st.write("### Anteprima Pagine")
-            cols = st.columns(5) # 5 miniature per riga
-            for i in range(num_pages):
-                page = doc[i]
-                pix = page.get_pixmap(matrix=fitz.Matrix(0.2, 0.2)) # Qualità bassa per velocità
-                img = Image.open(io.BytesIO(pix.tobytes("png")))
-                with cols[i % 5]:
-                    st.image(img, caption=f"Pagina {i+1}", use_container_width=True)
-            
-            st.divider()
-            
-            # Input per il riordino
-            new_order_str = st.text_input("Inserisci il nuovo ordine (es: 2, 1, 4, 3)", 
-                                         value=", ".join(map(str, range(1, num_pages + 1))))
-            
-            if st.button("Applica e Genera PDF"):
-                try:
-                    new_order = [int(x.strip()) - 1 for x in new_order_str.split(",")]
-                    if len(new_order) != num_pages:
-                        st.error(f"Devi inserire tutti i {num_pages} numeri delle pagine.")
-                    else:
-                        doc.select(new_order)
-                        buf = io.BytesIO()
-                        doc.save(buf)
-                        st.download_button("📥 Scarica PDF Riordinato", buf.getvalue(), "riordinato.pdf")
-                        st.success("Ordine applicato!")
-                except Exception as e:
-                    st.error(f"Errore: controlla i numeri inseriti.")
+        new_order_str = st.text_input("Nuovo ordine (es: 2, 1, 3)", value=", ".join(map(str, range(1, len(doc) + 1))))
+        if st.button("Salva Nuovo Ordine"):
+            try:
+                new_order = [int(x.strip()) - 1 for x in new_order_str.split(",")]
+                doc.select(new_order)
+                buf = io.BytesIO()
+                doc.save(buf)
+                st.download_button("📥 Scarica PDF Riordinato", buf.getvalue(), "riordinato.pdf")
+            except:
+                st.error("Controlla i numeri inseriti.")
 
-# --- SEZIONE TRADUTTORE ---
+# --- 🌐 TRADUTTORE PDF ---
 elif menu == "🌐 Traduttore PDF":
     st.header("Traduzione PDF")
-    up_trans = st.file_uploader("Carica PDF", type="pdf")
-    lang = st.selectbox("Lingua", ["it", "en", "fr", "es", "de"])
-    if up_trans and st.button("Traduci"):
+    lang = st.selectbox("Lingua di destinazione", ["it", "en", "fr", "es", "de"])
+    if st.button("Avvia Traduzione"):
         with st.spinner("Traduzione..."):
-            doc = fitz.open(stream=up_trans.read(), filetype="pdf")
+            doc = fitz.open(stream=st.session_state['pdf_bytes'], filetype="pdf")
             out_doc = fitz.open()
             translator = GoogleTranslator(source='auto', target=lang)
             for page in doc:
@@ -114,14 +122,11 @@ elif menu == "🌐 Traduttore PDF":
                     if b[4].strip():
                         trad = translator.translate(b[4][:4000])
                         new_page.insert_text((b[0], b[1]), trad, fontsize=9)
-            buf = io.BytesIO(); out_doc.save(buf)
-            st.download_button("📥 Scarica Tradotto", buf.getvalue(), "tradotto.pdf")
+            buf = io.BytesIO()
+            out_doc.save(buf)
+            st.download_button("📥 Scarica PDF Tradotto", buf.getvalue(), "tradotto.pdf")
 
-# --- SEZIONE DIAGRAMMI ---
+# --- 📊 CREA DIAGRAMMI ---
 elif menu == "📊 Crea Diagrammi":
-    st.header("Diagrammi Mermaid")
-    code = st.text_area("Sintassi", "graph TD\nA[Inizio] --> B[Fine]", height=200)
-    st_mermaid(code)
-
-st.sidebar.markdown("---")
-st.sidebar.info("Versione 2.8 - Visual PDF Editor")
+    st.header("Generatore Diagrammi")
+    code = st.text_area("Codice Mermaid", "graph TD\nA[File Caricato] --> B[Scegli Tool]\nB --> C[Scar
