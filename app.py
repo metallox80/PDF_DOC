@@ -16,18 +16,26 @@ if 'last_uploaded' not in st.session_state:
     st.session_state['last_uploaded'] = None
 
 # --- SIDEBAR: CARICAMENTO ---
-st.sidebar.title("📁 Carica Documento")
-uploaded_file = st.sidebar.file_uploader("Carica il PDF qui", type="pdf")
+st.sidebar.title("📁 Carica Documento Principale")
+uploaded_file = st.sidebar.file_uploader("Il file base per tutti i tool", type="pdf")
 
 if uploaded_file:
     if st.session_state['last_uploaded'] != uploaded_file.name:
         st.session_state['pdf_bytes'] = uploaded_file.read()
         st.session_state['last_uploaded'] = uploaded_file.name
-    st.sidebar.success(f"✅ {uploaded_file.name} pronto!")
+    st.sidebar.success(f"✅ {uploaded_file.name} in memoria")
 
 # --- MENU ---
 st.sidebar.markdown("---")
-menu = st.sidebar.radio("Scegli Funzione", ["🏠 Dashboard", "🔄 Converti & Estrai", "🔃 Rotazione Multipla", "🔢 Riordina Pagine", "🌐 Traduttore", "📊 Diagrammi"])
+menu = st.sidebar.radio("Scegli Funzione", [
+    "🏠 Dashboard", 
+    "🔄 Converti & Estrai", 
+    "➕ Unione PDF",
+    "🔃 Rotazione Multipla", 
+    "🔢 Riordina Pagine", 
+    "🌐 Traduttore", 
+    "📊 Diagrammi"
+])
 
 if not st.session_state['pdf_bytes'] and menu != "📊 Diagrammi":
     st.warning("⚠️ Carica un file PDF nella sidebar per iniziare.")
@@ -35,21 +43,22 @@ if not st.session_state['pdf_bytes'] and menu != "📊 Diagrammi":
 
 # --- 🏠 DASHBOARD ---
 if menu == "🏠 Dashboard":
-    st.header("Anteprima Documento")
+    st.header("Anteprima Documento Corrente")
     doc = fitz.open(stream=st.session_state['pdf_bytes'], filetype="pdf")
+    st.write(f"Pagine totali: {len(doc)}")
     p_idx = st.slider("Pagina", 1, len(doc), 1) - 1
     pix = doc[p_idx].get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
     st.image(Image.open(io.BytesIO(pix.tobytes("png"))), use_container_width=True)
 
 # --- 🔄 CONVERTI & ESTRAI ---
 elif menu == "🔄 Converti & Estrai":
-    st.header("Conversione ed Estrazione")
+    st.header("Esportazione")
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("Esporta in Word"):
+        if st.button("Esporta in Word (.docx)"):
             with open("temp.pdf", "wb") as f: f.write(st.session_state['pdf_bytes'])
             cv = Converter("temp.pdf"); cv.convert("out.docx"); cv.close()
-            with open("out.docx", "rb") as f: st.download_button("📥 Scarica Word", f, "doc.docx")
+            with open("out.docx", "rb") as f: st.download_button("📥 Scarica Word", f, "documento.docx")
     with col2:
         range_p = st.text_input("Range da estrarre (es: 1-2)", "1-1")
         if st.button("Estrai Pagine"):
@@ -59,80 +68,80 @@ elif menu == "🔄 Converti & Estrai":
                 new = fitz.open(); new.insert_pdf(doc, from_page=s-1, to_page=e-1)
                 buf = io.BytesIO(); new.save(buf)
                 st.download_button("📥 Scarica Estratto", buf.getvalue(), "estratto.pdf")
-            except: st.error("Formato range errato.")
+            except: st.error("Errore range.")
 
-# --- 🔃 ROTAZIONE MULTIPLA (AGGIORNATA) ---
-elif menu == "🔃 Rotazione Multipla":
-    st.header("Rotazione Avanzata")
-    doc = fitz.open(stream=st.session_state['pdf_bytes'], filetype="pdf")
+# --- ➕ UNIONE PDF (NUOVA SEZIONE) ---
+elif menu == "➕ Unione PDF":
+    st.header("Unisci altri file al documento corrente")
+    st.info("Il file che hai caricato nella sidebar è il 'Documento Base'. Qui puoi aggiungerne altri.")
     
-    col_ctrl, col_prev = st.columns([1, 1])
+    files_to_add = st.file_uploader("Seleziona uno o più PDF da aggiungere", type="pdf", accept_multiple_files=True)
+    position = st.radio("Dove vuoi aggiungere i nuovi file?", ["In coda (alla fine)", "In testa (all'inizio)"])
     
-    with col_ctrl:
-        mode = st.radio("Cosa vuoi ruotare?", ["Pagina Singola", "Tutto il PDF", "Range di Pagine"])
-        angle = st.selectbox("Angolo di rotazione oraria:", [90, 180, 270], index=0)
+    if files_to_add and st.button("Unisci i Documenti"):
+        base_doc = fitz.open(stream=st.session_state['pdf_bytes'], filetype="pdf")
+        new_merger = fitz.open()
         
-        target_pages = []
-        if mode == "Pagina Singola":
-            p = st.number_input("Numero pagina", min_value=1, max_value=len(doc), value=1)
-            target_pages = [p - 1]
-        elif mode == "Tutto il PDF":
-            target_pages = list(range(len(doc)))
+        if position == "In testa (all'inizio)":
+            for f in files_to_add:
+                with fitz.open(stream=f.read(), filetype="pdf") as p: new_merger.insert_pdf(p)
+            new_merger.insert_pdf(base_doc)
         else:
-            r = st.text_input("Inserisci range (es: 1-3 o 2,4,5)", "1-2")
-            try:
-                if "-" in r:
-                    s, e = map(int, r.split('-'))
-                    target_pages = list(range(s-1, e))
-                else:
-                    target_pages = [int(x.strip())-1 for x in r.split(',')]
-            except: st.error("Formato range non valido.")
+            new_merger.insert_pdf(base_doc)
+            for f in files_to_add:
+                with fitz.open(stream=f.read(), filetype="pdf") as p: new_merger.insert_pdf(p)
+        
+        buf = io.BytesIO()
+        new_merger.save(buf)
+        st.session_state['pdf_bytes'] = buf.getvalue() # Aggiorna memoria
+        st.success("Documenti uniti con successo!")
+        st.download_button("📥 Scarica PDF Unito", buf.getvalue(), "pdf_unito.pdf")
 
-        if st.button("Applica Rotazione"):
-            for p_idx in target_pages:
-                if 0 <= p_idx < len(doc):
-                    doc[p_idx].set_rotation((doc[p_idx].rotation + angle) % 360)
+# --- 🔃 ROTAZIONE MULTIPLA ---
+elif menu == "🔃 Rotazione Multipla":
+    st.header("Rotazione")
+    doc = fitz.open(stream=st.session_state['pdf_bytes'], filetype="pdf")
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        mode = st.radio("Target", ["Singola", "Tutto", "Range"])
+        angle = st.selectbox("Angolo", [90, 180, 270])
+        if mode == "Singola":
+            targets = [st.number_input("Pagina", 1, len(doc), 1) - 1]
+        elif mode == "Tutto":
+            targets = list(range(len(doc)))
+        else:
+            r = st.text_input("Range (es: 1-3)", "1-2")
+            targets = list(range(int(r.split('-')[0])-1, int(r.split('-')[1])))
             
-            buf = io.BytesIO()
-            doc.save(buf)
-            st.session_state['pdf_bytes'] = buf.getvalue()
-            st.success("Rotazione applicata alla memoria del tool!")
-            st.download_button("📥 Scarica PDF Modificato", buf.getvalue(), "pdf_elaborato.pdf")
-
-    with col_prev:
-        st.subheader("Anteprima Rapida")
-        # Mostriamo la prima pagina del target selezionato
-        if target_pages:
-            p_to_show = target_pages[0]
-            if 0 <= p_to_show < len(doc):
-                pix = doc[p_to_show].get_pixmap(matrix=fitz.Matrix(angle))
-                st.image(Image.open(io.BytesIO(pix.tobytes("png"))), caption=f"Anteprima Pagina {p_to_show+1} ruotata", use_container_width=True)
+        if st.button("Applica Rotazione"):
+            for p in targets: doc[p].set_rotation((doc[p].rotation + angle) % 360)
+            buf = io.BytesIO(); doc.save(buf); st.session_state['pdf_bytes'] = buf.getvalue()
+            st.success("Ruotato!")
+    with col2:
+        pix = doc[targets[0]].get_pixmap(matrix=fitz.Matrix(angle))
+        st.image(Image.open(io.BytesIO(pix.tobytes("png"))), caption="Anteprima", use_container_width=True)
 
 # --- 🔢 RIORDINA PAGINE ---
 elif menu == "🔢 Riordina Pagine":
-    st.header("Cambia Ordine")
+    st.header("Riordino")
     doc = fitz.open(stream=st.session_state['pdf_bytes'], filetype="pdf")
-    grid = st.columns(6)
+    cols = st.columns(6)
     for i in range(len(doc)):
         pix = doc[i].get_pixmap(matrix=fitz.Matrix(0.1, 0.1))
-        with grid[i % 6]: st.image(Image.open(io.BytesIO(pix.tobytes("png"))), caption=f"P. {i+1}")
-    order = st.text_input("Nuova sequenza (es: 3,2,1)", value=", ".join(map(str, range(1, len(doc)+1))))
+        with cols[i % 6]: st.image(Image.open(io.BytesIO(pix.tobytes("png"))), caption=f"P.{i+1}")
+    order = st.text_input("Nuova sequenza", value=", ".join(map(str, range(1, len(doc)+1))))
     if st.button("Applica Ordine"):
-        try:
-            idx_list = [int(x.strip()) - 1 for x in order.split(",")]
-            doc.select(idx_list)
-            buf = io.BytesIO(); doc.save(buf)
-            st.session_state['pdf_bytes'] = buf.getvalue()
-            st.success("Ordine aggiornato in memoria!")
-            st.download_button("📥 Scarica Riordinato", buf.getvalue(), "riordinato.pdf")
-        except: st.error("Errore nei numeri.")
+        idx = [int(x.strip()) - 1 for x in order.split(",")]
+        doc.select(idx)
+        buf = io.BytesIO(); doc.save(buf); st.session_state['pdf_bytes'] = buf.getvalue()
+        st.download_button("📥 Scarica", buf.getvalue(), "ordinato.pdf")
 
-# --- TRADUTTORE ---
+# --- 🌐 TRADUTTORE ---
 elif menu == "🌐 Traduttore":
-    st.header("Traduzione PDF")
-    lang = st.selectbox("Verso:", ["it", "en", "fr", "es", "de"])
-    if st.button("Avvia Traduzione"):
-        with st.spinner("Traduzione..."):
+    st.header("Traduzione")
+    lang = st.selectbox("Lingua", ["it", "en", "fr", "es", "de"])
+    if st.button("Traduci ora"):
+        with st.spinner("Lavoro in corso..."):
             doc = fitz.open(stream=st.session_state['pdf_bytes'], filetype="pdf")
             out = fitz.open()
             translator = GoogleTranslator(source='auto', target=lang)
@@ -141,10 +150,10 @@ elif menu == "🌐 Traduttore":
                 for b in page.get_text("blocks"):
                     if b[4].strip():
                         new_p.insert_text((b[0], b[1]), translator.translate(b[4][:4000]), fontsize=9)
-            buf = io.BytesIO(); out.save(buf); st.download_button("📥 Scarica Tradotto", buf.getvalue(), "tradotto.pdf")
+            buf = io.BytesIO(); out.save(buf); st.download_button("📥 Scarica", buf.getvalue(), "tradotto.pdf")
 
-# --- DIAGRAMMI ---
+# --- 📊 DIAGRAMMI ---
 elif menu == "📊 Diagrammi":
     st.header("Diagrammi")
-    code = st.text_area("Sintassi Mermaid", "graph LR\nA-->B", height=150)
+    code = st.text_area("Mermaid Code", "graph TD\nA-->B", height=150)
     st_mermaid(code)
