@@ -4,3 +4,4 @@ pdf2docx
 deep-translator
 streamlit-mermaid
 pillow
+streamlit-drawable-canvas
