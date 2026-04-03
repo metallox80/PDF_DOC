@@ -7,3 +7,4 @@ soundfile
 matplotlib
 numpy
 pillow
+yt-dlp
